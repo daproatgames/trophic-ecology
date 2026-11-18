@@ -7,6 +7,7 @@ import { GameEnd, GameShell, HudStat, fireConfetti } from '../components/game';
 import { Button, Icon, cn } from '../components/ui';
 import { sound } from '../lib/sound';
 import { KartingOnline } from './KartingOnline';
+import { useCloud } from '../state/CloudContext';
 
 type Mode = 'local' | 'ai';
 type Phase = 'lobby' | 'countdown' | 'racing' | 'finished';
@@ -77,6 +78,7 @@ function PlayerQuestion({
 
 export function Karting() {
   const { state, recordGameResult } = useStudy();
+  const { submitKarting } = useCloud();
   const [phase, setPhase] = useState<Phase>('lobby');
   const [mode, setMode] = useState<Mode>('local');
   const [online, setOnline] = useState(false);
@@ -150,6 +152,7 @@ export function Karting() {
       const player = p1Ref.current;
       const score = Math.round(player.progress * 1000 + player.correct * 120 + player.fuel * 4);
       recordGameResult('karting', score, accuracy(player), { won: who === 1 ? 1 : 0, mode, laps }, 30 + (who === 1 ? 40 : 0));
+      void submitKarting(score, accuracy(player));
     }
   };
 
@@ -284,7 +287,7 @@ export function Karting() {
       <GameShell gameId="karting">
         <div className="relative min-h-[calc(100vh-170px)] overflow-hidden rounded-3xl border border-white/10">
           <div className="absolute inset-0"><KartScene preview className="h-full w-full" /></div>
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(4,8,12,0.95)_0%,rgba(4,8,12,0.72)_45%,rgba(4,8,12,0.25)_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(4,8,12,0.92)_0%,rgba(4,8,12,0.58)_45%,rgba(4,8,12,0.12)_100%)]" />
           <div className="relative grid min-h-[calc(100vh-170px)] items-center gap-6 p-5 sm:p-8 lg:grid-cols-[1.1fr_0.9fr]">
             <div>
               <div className="mb-3 flex flex-wrap items-center gap-2"><span className="rounded-full border border-[rgba(183,243,74,0.35)] bg-[rgba(183,243,74,0.1)] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.16em] text-acid">3D · Local multiplayer</span><span className="rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.16em] text-white/40">1–2 players</span></div>

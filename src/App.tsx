@@ -14,6 +14,8 @@ import { LockIn } from './pages/LockIn';
 import { ProgressPage } from './pages/ProgressPage';
 import { Autopsy } from './pages/Autopsy';
 import { Achievements } from './pages/Achievements';
+import { Account } from './pages/Account';
+import { Leaderboard } from './pages/Leaderboard';
 import { Settings } from './pages/Settings';
 import { Button, Icon, LinkButton } from './components/ui';
 
@@ -68,6 +70,8 @@ export default function App() {
             <Route path="/progress" element={<ProgressPage />} />
             <Route path="/autopsy" element={<Autopsy />} />
             <Route path="/achievements" element={<Achievements />} />
+            <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/account" element={<Account />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
           </Route>

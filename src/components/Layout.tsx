@@ -7,6 +7,7 @@ import { ACHIEVEMENT_MAP } from '../data/achievements';
 import { TOPICS } from '../data/concepts';
 import { Button, Icon, LinkButton, Modal, ProgressBar, cn } from './ui';
 import { sound } from '../lib/sound';
+import { useCloud } from '../state/CloudContext';
 
 const NAV = [
   {
@@ -31,6 +32,7 @@ const NAV = [
       { to: '/progress', label: 'Progress', icon: 'ChartNoAxesCombined' },
       { to: '/autopsy', label: 'Test Autopsy', icon: 'ScanSearch' },
       { to: '/achievements', label: 'Achievements', icon: 'Trophy' },
+      { to: '/leaderboard', label: 'Leaderboard', icon: 'Medal' },
     ],
   },
 ];
@@ -45,6 +47,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/progress': 'Progress',
   '/autopsy': 'Test Autopsy',
   '/achievements': 'Achievements',
+  '/leaderboard': 'Leaderboard',
+  '/account': 'Account',
   '/settings': 'Settings',
 };
 
@@ -99,6 +103,10 @@ function Sidebar({ onOpenHelp }: { onOpenHelp: () => void }) {
         ))}
         <div>
           <div className="mb-1.5 px-3 text-[9px] font-bold uppercase tracking-[0.18em] text-dim">System</div>
+          <NavLink to="/account" className={({ isActive }) => cn('nav-item', isActive && 'active')} onClick={() => sound.play('click')}>
+            <Icon name="UserRound" size={16} />
+            <span className="flex-1">Account</span>
+          </NavLink>
           <NavLink to="/settings" className={({ isActive }) => cn('nav-item', isActive && 'active')} onClick={() => sound.play('click')}>
             <Icon name="Settings2" size={16} />
             <span className="flex-1">Settings & data</span>
@@ -141,8 +149,9 @@ function Sidebar({ onOpenHelp }: { onOpenHelp: () => void }) {
   );
 }
 
-function Topbar({ onOpenHelp, onOpenMenu }: { onOpenHelp: () => void; onOpenMenu: () => void }) {
+function Topbar({ onOpenHelp }: { onOpenHelp: () => void }) {
   const { state, analytics, setSettings } = useStudy();
+  const { profile } = useCloud();
   const location = useLocation();
   return (
     <header className="topbar">
@@ -163,9 +172,10 @@ function Topbar({ onOpenHelp, onOpenMenu }: { onOpenHelp: () => void; onOpenMenu
         <button className="btn btn-icon" onClick={onOpenHelp} aria-label="Keyboard shortcuts" title="Keyboard shortcuts"><Icon name="Keyboard" size={16} /></button>
         <button className="btn btn-icon" onClick={() => { setSettings({ sound: !state.settings.sound }); sound.play('click'); }} aria-label="Toggle sound" title="Toggle sound"><Icon name={state.settings.sound ? 'Volume2' : 'VolumeX'} size={16} /></button>
         <button className="btn btn-icon" onClick={() => setSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' })} aria-label="Toggle theme" title="Toggle theme"><Icon name={state.settings.theme === 'dark' ? 'Sun' : 'Moon'} size={16} /></button>
-        <button className="ml-1 hidden h-9 w-9 items-center justify-center rounded-full border border-[rgba(183,243,74,0.25)] bg-[rgba(183,243,74,0.08)] text-acid sm:flex" onClick={onOpenMenu} aria-label="Open navigation menu">
-          <Icon name="UserRound" size={16} />
-        </button>
+        <Link to="/account" className="ml-1 hidden h-9 items-center gap-1.5 rounded-full border border-[rgba(183,243,74,0.25)] bg-[rgba(183,243,74,0.08)] px-2.5 text-[10px] font-semibold text-acid sm:flex" aria-label="Cloud account">
+          <Icon name={profile ? 'CloudCheck' : 'UserRound'} size={14} />
+          {profile ? profile.name.slice(0, 12) : 'Sign in'}
+        </Link>
       </div>
     </header>
   );
@@ -240,6 +250,7 @@ function Drawer({ open, onClose, onOpenHelp }: { open: boolean; onClose: () => v
                 </div>
               ))}
               <div>
+                <NavLink to="/account" onClick={onClose} className={({ isActive }) => cn('nav-item', isActive && 'active')}><Icon name="UserRound" size={16} /><span>Account</span></NavLink>
                 <NavLink to="/settings" onClick={onClose} className={({ isActive }) => cn('nav-item', isActive && 'active')}><Icon name="Settings2" size={16} /><span>Settings & data</span></NavLink>
                 <button className="nav-item w-full" onClick={() => { onClose(); onOpenHelp(); }}><Icon name="Keyboard" size={16} /><span className="flex-1 text-left">Shortcuts</span></button>
               </div>
@@ -422,7 +433,7 @@ export function Layout() {
     <div className="shell">
       <Sidebar onOpenHelp={() => setHelp(true)} />
       <div className="main">
-        <Topbar onOpenHelp={() => setHelp(true)} onOpenMenu={() => setDrawer(true)} />
+        <Topbar onOpenHelp={() => setHelp(true)} />
         <MobileTopbar onOpenMenu={() => setDrawer(true)} />
         <main className="page">
           <AnimatePresence mode="wait">

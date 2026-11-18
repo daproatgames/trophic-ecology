@@ -9,6 +9,7 @@ import { KartScene, type KartView } from '../components/KartScene';
 import { GameEnd, GameShell, HudStat, fireConfetti } from '../components/game';
 import { Button, Icon, cn } from '../components/ui';
 import { sound } from '../lib/sound';
+import { useCloud } from '../state/CloudContext';
 
 type Role = 'host' | 'guest';
 type ConnStatus = 'idle' | 'creating' | 'joining' | 'waiting' | 'connected' | 'disconnected' | 'error';
@@ -40,6 +41,18 @@ interface InputState { throttle: boolean; brake: boolean; steer: number }
 
 const COLORS = { p1: '#b7f34a', p2: '#4de1c1' };
 const ROOM_PREFIX = 'trophic-kart-';
+const PEER_OPTIONS = {
+  debug: 0 as const,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    ],
+  },
+};
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const makeRacer = (lateral: number): Racer => ({ progress: 0, lateral, speed: 0, steer: 0, fuel: 70, answers: 0, correct: 0, boostUntil: 0 });
 const initialPublic = (): PublicState => ({ p1: makeRacer(1.2), p2: makeRacer(-1.2), qi1: 0, qi2: 0, phase: 'lobby', countdown: 0, winner: null, seconds: 0 });
@@ -82,6 +95,7 @@ function OnlineQuestion({ q, onAnswer, feedback, disabled, color }: { q?: Questi
 
 export function KartingOnline({ onExit }: { onExit: () => void }) {
   const { state, recordGameResult } = useStudy();
+  const { submitKarting } = useCloud();
   const [role, setRole] = useState<Role | null>(null);
   const [status, setStatus] = useState<ConnStatus>('idle');
   const [code, setCode] = useState('');
@@ -95,6 +109,11 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
   pubRef.current = pub;
   const [feedback, setFeedback] = useState<{ selected: number; correct: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [opponentReady, setOpponentReady] = useState(false);
+  const startIdRef = useRef('');
+  const startRetryRef = useRef<number | null>(null);
+  const helloRetryRef = useRef<number | null>(null);
+  const welcomedRef = useRef(false);
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<DataConnection | null>(null);
   const roleRef = useRef<Role | null>(null);
@@ -112,6 +131,9 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
   const setPublic = (next: PublicState) => { pubRef.current = next; setPub(next); send({ type: 'state', state: next }); };
 
   const cleanup = () => {
+    if (startRetryRef.current) { window.clearInterval(startRetryRef.current); startRetryRef.current = null; }
+    if (helloRetryRef.current) { window.clearInterval(helloRetryRef.current); helloRetryRef.current = null; }
+    welcomedRef.current = false;
     try { connRef.current?.close(); } catch { /* ignore */ }
     try { peerRef.current?.destroy(); } catch { /* ignore */ }
     connRef.current = null; peerRef.current = null;
@@ -123,16 +145,20 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
     cleanup(); setError(''); setRole('host'); roleRef.current = 'host'; setStatus('creating'); recorded.current = false;
     const c = roomCode();
     setCode(c);
-    const peer = new Peer(ROOM_PREFIX + c, { debug: 0 });
+    const peer = new Peer(ROOM_PREFIX + c, PEER_OPTIONS);
     peerRef.current = peer;
     peer.on('open', () => setStatus('waiting'));
     peer.on('connection', (conn) => {
       if (connRef.current) { try { conn.close(); } catch { /* ignore */ } return; }
       connRef.current = conn;
-      setStatus('connected');
-      conn.send({ type: 'welcome', name, code: c });
-      conn.on('open', () => { setStatus('connected'); conn.send({ type: 'welcome', name, code: c }); });
+      setOpponentReady(false);
       conn.on('data', (d) => hostHandler.current(d));
+      const announceHost = () => {
+        setStatus('connected');
+        try { conn.send({ type: 'welcome', name, code: c }); } catch { /* the guest will retry hello */ }
+      };
+      conn.on('open', announceHost);
+      if (conn.open) announceHost();
       conn.on('close', () => { setStatus('disconnected'); setError('Your opponent left the room.'); });
       conn.on('error', () => setError('Connection error. Try a new room code.'));
     });
@@ -143,13 +169,23 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
     const clean = joinCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (clean.length < 4) { setError('Enter the room code from your opponent.'); return; }
     cleanup(); setError(''); setRole('guest'); roleRef.current = 'guest'; setCode(clean); setStatus('joining'); recorded.current = false;
-    const peer = new Peer({ debug: 0 });
+    const peer = new Peer(PEER_OPTIONS);
     peerRef.current = peer;
     peer.on('open', () => {
       const conn = peer.connect(ROOM_PREFIX + clean, { reliable: true });
       connRef.current = conn;
-      conn.on('open', () => { setStatus('connected'); conn.send({ type: 'hello', name }); });
       conn.on('data', (d) => guestHandler.current(d));
+      conn.on('open', () => {
+        setStatus('connected');
+        welcomedRef.current = false;
+        const hello = () => { try { conn.send({ type: 'hello', name }); } catch { /* host may still be opening */ } };
+        hello();
+        if (helloRetryRef.current) window.clearInterval(helloRetryRef.current);
+        helloRetryRef.current = window.setInterval(() => {
+          if (welcomedRef.current) { if (helloRetryRef.current) { window.clearInterval(helloRetryRef.current); helloRetryRef.current = null; } return; }
+          hello();
+        }, 1200);
+      });
       conn.on('close', () => { setStatus('disconnected'); setError('The host left the room.'); });
       conn.on('error', () => setError('Could not reach that room.'));
     });
@@ -164,6 +200,8 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
     setFeedback(null);
     answerLock.current = false;
     recorded.current = false;
+    if (startRetryRef.current) { window.clearInterval(startRetryRef.current); startRetryRef.current = null; }
+    startIdRef.current = '';
     inputs.current = { throttle: false, brake: false, steer: 0 };
     hostInputs.current = { p1: { throttle: false, brake: false, steer: 0 }, p2: { throttle: false, brake: false, steer: 0 } };
   };
@@ -177,7 +215,17 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
     const fresh = initialPublic();
     fresh.phase = 'countdown'; fresh.countdown = 3;
     setPublic(fresh);
-    send({ type: 'start', q1: q1.map((q) => q.id), q2: questionsRef.current.p2.map((q) => q.id), laps });
+    const startId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    startIdRef.current = startId;
+    const payload = { type: 'start', startId, q1: q1.map((q) => q.id), q2: questionsRef.current.p2.map((q) => q.id), laps };
+    send(payload);
+    if (startRetryRef.current) window.clearInterval(startRetryRef.current);
+    startRetryRef.current = window.setInterval(() => {
+      if (startIdRef.current !== startId) { if (startRetryRef.current) window.clearInterval(startRetryRef.current); return; }
+      send(payload);
+      send({ type: 'state', state: pubRef.current });
+    }, 700);
+    window.setTimeout(() => { if (startIdRef.current === startId && startRetryRef.current) { window.clearInterval(startRetryRef.current); startRetryRef.current = null; } }, 10000);
     sound.play('level');
   };
 
@@ -211,17 +259,23 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
   hostHandler.current = (raw: unknown) => {
     const d = raw as { type?: string; name?: string; input?: InputState; choice?: number };
     if (!d || typeof d !== 'object') return;
-    if (d.type === 'hello') { setOpponent(d.name || 'Rival'); send({ type: 'welcome', name, code }); setStatus('connected'); }
+    if (d.type === 'hello') { setOpponent(d.name || 'Rival'); setOpponentReady(true); send({ type: 'welcome', name, code }); setStatus('connected'); }
+    if (d.type === 'start-ack') { if (startRetryRef.current) { window.clearInterval(startRetryRef.current); startRetryRef.current = null; } }
     if (d.type === 'input' && d.input) hostInputs.current.p2 = d.input;
     if (d.type === 'answer' && typeof d.choice === 'number') processHostAnswer(2, d.choice);
     if (d.type === 'reset') resetRace();
   };
 
   guestHandler.current = (raw: unknown) => {
-    const d = raw as { type?: string; name?: string; state?: PublicState; q1?: string[]; q2?: string[]; laps?: number; winner?: number };
+    const d = raw as { type?: string; name?: string; state?: PublicState; q1?: string[]; q2?: string[]; laps?: number; winner?: number; startId?: string };
     if (!d || typeof d !== 'object') return;
-    if (d.type === 'welcome') { setOpponent(d.name || 'Host'); setStatus('connected'); }
+    if (d.type === 'welcome') { setOpponent(d.name || 'Host'); setStatus('connected'); welcomedRef.current = true; if (helloRetryRef.current) { window.clearInterval(helloRetryRef.current); helloRetryRef.current = null; } }
     if (d.type === 'start') {
+      send({ type: 'start-ack', startId: d.startId });
+      if (d.startId && startIdRef.current === d.startId && pubRef.current.phase !== 'lobby') return;
+      startIdRef.current = d.startId || '';
+      welcomedRef.current = true;
+      if (helloRetryRef.current) { window.clearInterval(helloRetryRef.current); helloRetryRef.current = null; }
       const qs = (d.q2 || []).map((id) => QUESTION_MAP[id]).filter(Boolean) as Question[];
       questionsRef.current = { p1: [], p2: qs };
       setLaps(d.laps || 2);
@@ -261,7 +315,7 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
         next.phase = 'finished'; next.winner = w;
         setPublic(next);
         send({ type: 'finish', state: next });
-        if (!recorded.current) { recorded.current = true; recordGameResult('karting', scoreOf(n1), accuracy(n1), { won: w === 1 ? 1 : 0, mode: 'online' }, 30 + (w === 1 ? 40 : 0)); }
+        if (!recorded.current) { recorded.current = true; recordGameResult('karting', scoreOf(n1), accuracy(n1), { won: w === 1 ? 1 : 0, mode: 'online' }, 30 + (w === 1 ? 40 : 0)); void submitKarting(scoreOf(n1), accuracy(n1)); }
         if (w === 1) fireConfetti();
         sound.play(w === 1 ? 'win' : 'lose');
         return;
@@ -282,6 +336,7 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
     recorded.current = true;
     const r = pub.p2;
     recordGameResult('karting', scoreOf(r), accuracy(r), { won: pub.winner === 2 ? 1 : 0, mode: 'online' }, 30 + (pub.winner === 2 ? 40 : 0));
+    void submitKarting(scoreOf(r), accuracy(r));
     if (pub.winner === 2) fireConfetti();
     sound.play(pub.winner === 2 ? 'win' : 'lose');
   }, [role, pub.phase, pub.winner, pub.p2, recordGameResult]);
@@ -355,7 +410,7 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
     const won = pub.winner === (role === 'host' ? 1 : 2);
     return (
       <GameShell gameId="karting" hud={<><HudStat icon="Flag" label="Laps" value={`${laps}`} color="var(--mint)" /><HudStat icon="Globe2" label="Online" value={code || 'room'} color="var(--amber)" /></>}>
-        <GameEnd gameId="karting" score={scoreOf(localRacer)} accuracy={accuracy(localRacer)} xp={30 + (won ? 40 : 0)} onReplay={() => { if (role === 'guest') send({ type: 'reset' }); resetRace(); }} message={won ? 'You win the online race.' : `${opponent} takes the checkered flag.`}
+        <GameEnd gameId="karting" score={scoreOf(localRacer)} accuracy={accuracy(localRacer)} xp={30 + (won ? 40 : 0)} hideReplay onReplay={() => { if (role === 'guest') send({ type: 'reset' }); resetRace(); }} message={won ? 'You win the online race.' : `${opponent} takes the checkered flag.`}
           stats={[{ label: 'Laps', value: `${Math.min(laps, Math.floor(localRacer.progress))}/${laps}` }, { label: 'Correct answers', value: `${localRacer.correct}/${localRacer.answers}` }, { label: 'Race time', value: `${Math.floor(pub.seconds / 60)}:${String(Math.floor(pub.seconds % 60)).padStart(2, '0')}` }, { label: 'Opponent', value: opponent }]}
         >
           <div className="mt-4 grid gap-2 sm:grid-cols-2">{[{ n: 'You', r: localRacer, c: localColor, w: won }, { n: opponent, r: otherRacer, c: role === 'host' ? COLORS.p2 : COLORS.p1, w: !won }].map((x) => <div key={x.n} className={cn('rounded-2xl border p-3', x.w ? 'border-[rgba(183,243,74,0.4)] bg-[rgba(183,243,74,0.06)]' : 'border-white/10 bg-black/25')}><div className="flex justify-between"><span className="text-[11px] font-semibold" style={{ color: x.c }}>{x.n}</span>{x.w && <span className="chip chip-acid">Winner</span>}</div><div className="mt-2 grid grid-cols-3 gap-2 text-[9px]"><div><div className="text-white/30">Laps</div><div className="text-white">{Math.min(laps, Math.floor(x.r.progress))}/{laps}</div></div><div><div className="text-white/30">Correct</div><div className="text-white">{x.r.correct}/{x.r.answers}</div></div><div><div className="text-white/30">Fuel</div><div className="text-white">{Math.round(x.r.fuel)}</div></div></div></div>)}</div>
@@ -401,7 +456,7 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
               <div className="flex items-center gap-2 text-xs font-semibold text-white"><Icon name="Crown" size={14} className="text-acid" />Host a room</div>
               <p className="mt-1 text-[10px] text-white/40">Create a code, then wait for a friend to join.</p>
               <div className="mt-3"><div className="mb-1 text-[8px] font-bold uppercase tracking-wider text-white/30">Race length</div><div className="flex gap-1.5">{[1, 2, 3].map((n) => <button key={n} onClick={() => setLaps(n)} className={cn('flex-1 rounded-md border py-1.5 text-[9px] font-semibold', laps === n ? 'border-[rgba(183,243,74,0.4)] bg-[rgba(183,243,74,0.08)] text-acid' : 'border-white/10 text-white/40')}>{n} lap{n > 1 ? 's' : ''}</button>)}</div></div>
-              {role === 'host' && (status === 'waiting' || status === 'connected' || status === 'creating') ? <div className="mt-3"><div className="flex items-center justify-between rounded-xl border border-[rgba(183,243,74,0.25)] bg-[rgba(183,243,74,0.06)] px-3 py-2"><span className="font-display text-lg font-bold tracking-[0.3em] text-acid">{code}</span><button className="text-[9px] font-semibold text-white/50 hover:text-white" onClick={() => { navigator.clipboard?.writeText(code); setCopied(true); window.setTimeout(() => setCopied(false), 1500); }}>{copied ? 'Copied' : 'Copy'}</button></div><div className="mt-2 text-[9px] text-white/35">{status === 'waiting' ? 'Waiting for your opponent…' : `Connected to ${opponent}`}</div>{status === 'connected' && <Button variant="primary" size="sm" className="mt-3 w-full" icon="Flag" onClick={startHostRace}>Start the race</Button>}</div> : <Button variant="primary" size="sm" className="mt-3 w-full" icon="Plus" onClick={createRoom} disabled={status === 'creating' || status === 'joining'}>Create room</Button>}
+              {role === 'host' && (status === 'waiting' || status === 'connected' || status === 'creating') ? <div className="mt-3"><div className="flex items-center justify-between rounded-xl border border-[rgba(183,243,74,0.25)] bg-[rgba(183,243,74,0.06)] px-3 py-2"><span className="font-display text-lg font-bold tracking-[0.3em] text-acid">{code}</span><button className="text-[9px] font-semibold text-white/50 hover:text-white" onClick={() => { navigator.clipboard?.writeText(code); setCopied(true); window.setTimeout(() => setCopied(false), 1500); }}>{copied ? 'Copied' : 'Copy'}</button></div><div className="mt-2 text-[9px] text-white/35">{status === 'waiting' ? 'Waiting for your opponent…' : `Connected to ${opponent}`}</div>{status === 'connected' && <Button variant="primary" size="sm" className="mt-3 w-full" icon="Flag" onClick={startHostRace}>Start the race</Button>}{!opponentReady && <div className="mt-1.5 text-[8.5px] text-white/30">Opponent joined. You can start now.</div>}</div> : <Button variant="primary" size="sm" className="mt-3 w-full" icon="Plus" onClick={createRoom} disabled={status === 'creating' || status === 'joining'}>Create room</Button>}
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-white"><Icon name="LogIn" size={14} className="text-mint" />Join a room</div>

@@ -235,6 +235,7 @@ export function GameEnd({
   xp,
   stats,
   onReplay,
+  hideReplay,
   extra,
   message,
   children,
@@ -245,6 +246,7 @@ export function GameEnd({
   xp?: number;
   stats?: { label: string; value: string | number }[];
   onReplay: () => void;
+  hideReplay?: boolean;
   extra?: React.ReactNode;
   message?: string;
   children?: React.ReactNode;
@@ -272,7 +274,7 @@ export function GameEnd({
       </div>
       {children}
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-        <Button variant="primary" icon="RotateCcw" onClick={onReplay}>Run it again</Button>
+        {!hideReplay && <Button variant="primary" icon="RotateCcw" onClick={onReplay}>Run it again</Button>}
         <LinkButton to="/arcade" icon="Gamepad2">Arcade</LinkButton>
         <LinkButton to="/progress" icon="ChartNoAxesCombined">Progress</LinkButton>
       </div>

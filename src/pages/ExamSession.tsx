@@ -4,7 +4,8 @@ import { useStudy } from '../state/StudyContext';
 import type { ExamAnswer } from '../types';
 import type { ExamPlan } from '../data/examBlueprints';
 import { buildExamPlan } from '../data/examBlueprints';
-import { clearExamDraft, emptyAnswers, gradeExamPlan, loadExamDraft, loadExamStart, saveExamDraft } from '../lib/exam';
+import { clearExamDraft, emptyAnswers, gradeExamPlan, examPct, loadExamDraft, loadExamStart, saveExamDraft } from '../lib/exam';
+import { useCloud } from '../state/CloudContext';
 import { Button, Icon, LinkButton, Modal, ProgressBar, cn } from '../components/ui';
 import { sound } from '../lib/sound';
 
@@ -16,6 +17,7 @@ function hasResponse(a: ExamAnswer): boolean {
 
 export function ExamSession() {
   const { state, saveExam } = useStudy();
+  const { submitExam } = useCloud();
   const navigate = useNavigate();
   const startConfig = useMemo(() => loadExamStart(), []);
   const draft = useMemo(() => loadExamDraft(), []);
@@ -64,6 +66,8 @@ export function ExamSession() {
     const result = gradeExamPlan(plan, answers, startedAt, Date.now());
     clearExamDraft();
     saveExam(result);
+    const pct = examPct(result);
+    void submitExam(pct, pct);
     navigate(`/exam/results/${result.id}`);
   };
 

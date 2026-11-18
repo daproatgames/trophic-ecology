@@ -29,6 +29,7 @@ The app uses a hash router, so the production build can be served from any stati
 - **Lock-In Mode** with a Pomodoro-style block plan, weakest-concept prioritization, active recall, adaptive review, breaks and a final assessment.
 - **Test Autopsy** that distinguishes verified practice-test deductions from uncertain/illegible details.
 - **Local-first progress**: mastery, spaced repetition, XP, achievements, study history, exams and settings persist in `localStorage`; JSON export/import is available in Settings.
+- **Cloud accounts and global leaderboards**: optional username/password game accounts (no email) store a cloud save snapshot and publish karting, exam, mastery and XP scores to Firebase Firestore. Passwords are never stored; account IDs are SHA-256 credential hashes.
 
 ## Learning model
 
@@ -63,4 +64,6 @@ npm run build
 python3 -m http.server 4173 --directory dist
 ```
 
-Online kart rooms use PeerJS's public peer-to-peer signaling service, so two devices can create/join a room code without a custom backend. Room codes are private to the session; there is no account or matchmaking queue.
+Online kart rooms use PeerJS WebRTC with public STUN/TURN relays, so two devices can create/join a 5-character room code without a custom game server. The host owns the race simulation and sends the start handshake, questions and state; the guest sends driving inputs and answers. Room codes are private to the session; there is no matchmaking queue. Because this is peer-to-peer, unusual restrictive networks can still block a connection.
+
+Cloud profiles and leaderboards use Firebase project `trophic-ecology-2026` (Firestore database `default`). The client config and security rules live in `src/lib/cloud.ts` and `firestore.rules`.

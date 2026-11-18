@@ -195,7 +195,7 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
     if (!q) return;
     const correct = choice === q.answer;
     const now = performance.now();
-    const update = (r: Racer): Racer => ({ ...r, fuel: Math.min(100, r.fuel + (correct ? 30 : -9)), boostUntil: correct ? now + 2600 : r.boostUntil, answers: r.answers + 1, correct: r.correct + (correct ? 1 : 0) });
+    const update = (r: Racer): Racer => ({ ...r, fuel: Math.min(100, r.fuel + (correct ? 28 : -9)), boostUntil: correct ? now + 2600 : r.boostUntil, answers: r.answers + 1, correct: r.correct + (correct ? 1 : 0) });
     const next = player === 1 ? { ...s, p1: update(s.p1) } : { ...s, p2: update(s.p2) };
     setPublic(next);
     if (player === 1) {

@@ -23,7 +23,7 @@ The app uses a hash router, so the production build can be served from any stati
 - **Dashboard** with a transparent test-readiness formula, mastery radar, streaks, XP and a personalized next move.
 - **Learning Hub** with seven lessons, slide-sourced diagrams, "Explain It Simpler", "Challenge Me", retrieval checks, end quizzes and teach-back exercises.
 - **16 playable arcade games** with their own mechanics, scoring, sound, full-screen rendered arenas and mastery evidence:
-  Showdown, Tower, Boss Battles, Speed Run, Memory Match, Jeopardy, Escape Room, Science Detective, Flashcard Frenzy, Fill the Gaps, Drag-and-Drop Lab, Survival, True/False Blitz, Science Wordle, the Final Exam Gauntlet, and and Fuel Kart 3D with online room-code racing, local split-screen and AI.
+  Showdown, Tower, Boss Battles, Speed Run, Memory Match, Jeopardy, Escape Room, Science Detective, Flashcard Frenzy, Fill the Gaps, Drag-and-Drop Lab, Survival, True/False Blitz, Science Wordle, the Final Exam Gauntlet, and Fuel Kart 3D with online room-code racing, local split-screen and AI.
 - **Adaptive practice** across multiple-choice, multi-select, true/false, fill-in, short answer, scenario, error analysis, cause/effect, compare/contrast, matching, sorting, diagram labeling, ordering and teach-back.
 - **Exam simulator** with teacher-style, quick, full-length and challenge papers; flagging, timers, auto-save, written answers, detailed marking and a revision plan.
 - **Lock-In Mode** with a Pomodoro-style block plan, weakest-concept prioritization, active recall, adaptive review, breaks and a final assessment.
@@ -52,12 +52,15 @@ Readiness = 50% demonstrated mastery + 15% coverage + 15% rigor + 20% recent acc
 
 Lesson diagrams are cropped directly from the uploaded slide decks. Interactive lab diagrams are purpose-built for labeling/sorting/ordering practice. The practice-test audit does not invent a score or teacher comment where the uploaded PDF does not show one.
 
-## Public demo
+## Permanent site
 
-The permanent build is deployed at **https://daproatgames.github.io/trophic-ecology/** via GitHub Pages. For local testing:
+The live site is **https://daproatgames.github.io/trophic-ecology/** — hosted on GitHub Pages, so it stays online when this computer is off.
+
+For local testing, serve the production build:
 
 ```bash
-cloudflared tunnel --url http://127.0.0.1:4173
+npm run build
+python3 -m http.server 4173 --directory dist
 ```
 
-GitHub Pages hosts the static build permanently. Online kart rooms use PeerJS's public peer-to-peer signaling service, so they work between two devices without a custom backend.
+Online kart rooms use PeerJS's public peer-to-peer signaling service, so two devices can create/join a room code without a custom backend. Room codes are private to the session; there is no account or matchmaking queue.

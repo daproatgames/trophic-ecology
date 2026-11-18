@@ -327,7 +327,7 @@ export function Karting() {
   }
 
   return (
-    <GameShell gameId="karting" hud={<><HudStat icon="Flag" label="Race" value={`${Math.min(laps, Math.floor(Math.max(p1.progress, p2.progress)))}/${laps}`} color="var(--mint)" /><HudStat icon="Clock3" label="Time" value={`${Math.floor(raceSeconds / 60)}:${String(raceSeconds % 60).padStart(2, '0')}`} /><HudStat icon="Users" label="Mode" value={mode === 'ai' ? 'vs AI' : '2P'} /></>}>
+    <GameShell gameId="karting" hud={<><HudStat icon="Flag" label="Lap" value={`${Math.min(laps, Math.floor(Math.max(p1.progress, p2.progress)) + 1)}/${laps}`} color="var(--mint)" /><HudStat icon="Clock3" label="Time" value={`${Math.floor(raceSeconds / 60)}:${String(raceSeconds % 60).padStart(2, '0')}`} /><HudStat icon="Users" label="Mode" value={mode === 'ai' ? 'vs AI' : '2P'} /></>}>
       <div className="space-y-3">
         <div className="relative h-[340px] overflow-hidden rounded-2xl border border-white/10 sm:h-[420px]">
           <KartScene p1={view1} p2={view2} className="h-full w-full" />

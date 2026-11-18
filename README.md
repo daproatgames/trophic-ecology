@@ -23,7 +23,7 @@ The app uses a hash router, so the production build can be served from any stati
 - **Dashboard** with a transparent test-readiness formula, mastery radar, streaks, XP and a personalized next move.
 - **Learning Hub** with seven lessons, slide-sourced diagrams, "Explain It Simpler", "Challenge Me", retrieval checks, end quizzes and teach-back exercises.
 - **16 playable arcade games** with their own mechanics, scoring, sound, full-screen rendered arenas and mastery evidence:
-  Showdown, Tower, Boss Battles, Speed Run, Memory Match, Jeopardy, Escape Room, Science Detective, Flashcard Frenzy, Fill the Gaps, Drag-and-Drop Lab, Survival, True/False Blitz, Science Wordle, the Final Exam Gauntlet, and the new Fuel Kart 3D local-multiplayer racer.
+  Showdown, Tower, Boss Battles, Speed Run, Memory Match, Jeopardy, Escape Room, Science Detective, Flashcard Frenzy, Fill the Gaps, Drag-and-Drop Lab, Survival, True/False Blitz, Science Wordle, the Final Exam Gauntlet, and and Fuel Kart 3D with online room-code racing, local split-screen and AI.
 - **Adaptive practice** across multiple-choice, multi-select, true/false, fill-in, short answer, scenario, error analysis, cause/effect, compare/contrast, matching, sorting, diagram labeling, ordering and teach-back.
 - **Exam simulator** with teacher-style, quick, full-length and challenge papers; flagging, timers, auto-save, written answers, detailed marking and a revision plan.
 - **Lock-In Mode** with a Pomodoro-style block plan, weakest-concept prioritization, active recall, adaptive review, breaks and a final assessment.
@@ -54,10 +54,10 @@ Lesson diagrams are cropped directly from the uploaded slide decks. Interactive 
 
 ## Public demo
 
-A temporary Cloudflare quick tunnel can expose the local static build:
+The permanent build is deployed at **https://daproatgames.github.io/trophic-ecology/** via GitHub Pages. For local testing:
 
 ```bash
 cloudflared tunnel --url http://127.0.0.1:4173
 ```
 
-Quick tunnels are tied to the running local process and are not a permanent deployment. For a permanent URL, deploy `dist/` to Cloudflare Pages, Netlify, Vercel, or any static host.
+GitHub Pages hosts the static build permanently. Online kart rooms use PeerJS's public peer-to-peer signaling service, so they work between two devices without a custom backend.

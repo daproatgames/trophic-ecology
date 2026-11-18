@@ -6,12 +6,16 @@ import { KartScene, type KartView } from '../components/KartScene';
 import { GameEnd, GameShell, HudStat, fireConfetti } from '../components/game';
 import { Button, Icon, cn } from '../components/ui';
 import { sound } from '../lib/sound';
+import { KartingOnline } from './KartingOnline';
 
 type Mode = 'local' | 'ai';
 type Phase = 'lobby' | 'countdown' | 'racing' | 'finished';
 
 interface RacerState {
   progress: number;
+  lateral: number;
+  speed: number;
+  steer: number;
   fuel: number;
   answers: number;
   correct: number;
@@ -19,7 +23,9 @@ interface RacerState {
   finishedAt?: number;
 }
 
-const INITIAL: RacerState = { progress: 0, fuel: 60, answers: 0, correct: 0, boostUntil: 0 };
+const INITIAL: RacerState = { progress: 0, lateral: 1.2, speed: 0, steer: 0, fuel: 65, answers: 0, correct: 0, boostUntil: 0 };
+const P2_INITIAL: RacerState = { ...INITIAL, lateral: -1.2 };
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const COLORS = { p1: '#b7f34a', p2: '#4de1c1' };
 
 function accuracy(r: RacerState) { return r.answers ? Math.round((r.correct / r.answers) * 100) : 0; }
@@ -73,6 +79,7 @@ export function Karting() {
   const { state, recordGameResult } = useStudy();
   const [phase, setPhase] = useState<Phase>('lobby');
   const [mode, setMode] = useState<Mode>('local');
+  const [online, setOnline] = useState(false);
   const [laps, setLaps] = useState(2);
   const [p1, setP1] = useState<RacerState>(INITIAL);
   const [p2, setP2] = useState<RacerState>(INITIAL);
@@ -98,6 +105,7 @@ export function Karting() {
   const feedbackLock1 = useRef(false);
   const feedbackLock2 = useRef(false);
   const winnerRef = useRef<1 | 2 | null>(null);
+  const inputs = useRef({ p1: { throttle: false, brake: false, steer: 0 }, p2: { throttle: false, brake: false, steer: 0 } });
 
   const start = () => {
     const pool = selectQuestions(state, { count: 40, types: ['mcq'], avoidRecent: false });
@@ -109,7 +117,7 @@ export function Karting() {
     q1Ref.current = first;
     q2Ref.current = second.length >= 10 ? second : [...pool].reverse();
     setQi1(0); setQi2(0); qi1Ref.current = 0; qi2Ref.current = 0;
-    setP1(INITIAL); setP2(INITIAL); p1Ref.current = INITIAL; p2Ref.current = INITIAL;
+    setP1({ ...INITIAL }); setP2({ ...P2_INITIAL }); p1Ref.current = { ...INITIAL }; p2Ref.current = { ...P2_INITIAL }; inputs.current = { p1: { throttle: false, brake: false, steer: 0 }, p2: { throttle: false, brake: false, steer: 0 } };
     setFeedback1(null); setFeedback2(null); feedbackLock1.current = false; feedbackLock2.current = false;
     setWinner(null); winnerRef.current = null; setRecorded(false); setRaceSeconds(0);
     setCountdown(3);
@@ -153,15 +161,28 @@ export function Karting() {
       lastTick.current = now;
       const elapsed = (now - raceStart.current) / 1000;
       setRaceSeconds(Math.floor(elapsed));
-      const step = (r: RacerState): RacerState => {
-        const boost = now < r.boostUntil;
-        const fuel = Math.max(0, r.fuel - (4.2 + (boost ? 1.2 : 0)) * dt);
-        const speed = fuel > 0 ? 0.027 + (r.fuel > 70 ? 0.004 : 0) + (boost ? 0.018 : 0) : 0;
-        return { ...r, fuel, progress: Math.min(laps, r.progress + speed * dt) };
+      const step = (r: RacerState, inp: { throttle: boolean; brake: boolean; steer: number }): RacerState => {
+        const boostActive = now < r.boostUntil;
+        const engine = r.fuel > 0;
+        const throttle = engine ? (inp.throttle ? 1 : 0.55) : 0;
+        const target = engine ? (inp.brake ? 0 : (8.2 + (boostActive ? 2.5 : 0)) * throttle) : 0;
+        const speed = Math.max(0, r.speed + (target - r.speed) * Math.min(1, dt * 2.2));
+        let lateral = r.lateral + inp.steer * (1.0 + speed * 0.15) * dt;
+        let slowed = speed;
+        if (Math.abs(lateral) > 3.1) {
+          lateral = clamp(lateral, -3.1, 3.1);
+          slowed = speed * 0.72;
+        }
+        const fuel = Math.max(0, r.fuel - (0.9 + (inp.throttle ? 2.15 : 0.75) + (boostActive ? 0.7 : 0)) * dt);
+        return { ...r, fuel, speed: slowed, lateral, steer: inp.steer, progress: Math.min(laps, r.progress + slowed * dt / 180) };
       };
-      const n1 = step(p1Ref.current);
+      if (mode === 'ai') {
+        inputs.current.p2.throttle = true;
+        inputs.current.p2.steer = Math.sin(now / 1150) * 0.42;
+      }
+      const n1 = step(p1Ref.current, inputs.current.p1);
       p1Ref.current = n1; setP1(n1);
-      let n2 = step(p2Ref.current);
+      let n2 = step(p2Ref.current, inputs.current.p2);
       // AI answers on its own; local player 2 answers through the panel.
       if (mode === 'ai' && now >= aiNext.current) {
         const correct = Math.random() < 0.72;
@@ -178,14 +199,34 @@ export function Karting() {
 
   useEffect(() => {
     if (phase !== 'racing') return;
-    const handler = (e: KeyboardEvent) => {
+    const down = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
       if (['1', '2', '3', '4'].includes(e.key)) answer(1, Number(e.key) - 1);
       if (mode === 'local' && ['7', '8', '9', '0'].includes(e.key)) answer(2, e.key === '0' ? 3 : Number(e.key) - 7);
+      if (e.code === 'KeyW') inputs.current.p1.throttle = true;
+      if (e.code === 'KeyS') inputs.current.p1.brake = true;
+      if (e.code === 'KeyA') inputs.current.p1.steer = -1;
+      if (e.code === 'KeyD') inputs.current.p1.steer = 1;
+      if (mode === 'local' && e.code === 'ArrowUp') inputs.current.p2.throttle = true;
+      if (mode === 'local' && e.code === 'ArrowDown') inputs.current.p2.brake = true;
+      if (mode === 'local' && e.code === 'ArrowLeft') inputs.current.p2.steer = -1;
+      if (mode === 'local' && e.code === 'ArrowRight') inputs.current.p2.steer = 1;
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'KeyW') inputs.current.p1.throttle = false;
+      if (e.code === 'KeyS') inputs.current.p1.brake = false;
+      if (e.code === 'KeyA' && inputs.current.p1.steer < 0) inputs.current.p1.steer = 0;
+      if (e.code === 'KeyD' && inputs.current.p1.steer > 0) inputs.current.p1.steer = 0;
+      if (e.code === 'ArrowUp') inputs.current.p2.throttle = false;
+      if (e.code === 'ArrowDown') inputs.current.p2.brake = false;
+      if (e.code === 'ArrowLeft' && inputs.current.p2.steer < 0) inputs.current.p2.steer = 0;
+      if (e.code === 'ArrowRight' && inputs.current.p2.steer > 0) inputs.current.p2.steer = 0;
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, mode, qi1, qi2, feedback1, feedback2]);
 
@@ -232,9 +273,11 @@ export function Karting() {
 
   const q1 = questions1[qi1 % Math.max(1, questions1.length)];
   const q2 = questions2[qi2 % Math.max(1, questions2.length)];
-  const view1: KartView = { progress: p1.progress, fuel: p1.fuel, boost: performance.now() < p1.boostUntil, color: COLORS.p1 };
-  const view2: KartView = { progress: p2.progress, fuel: p2.fuel, boost: performance.now() < p2.boostUntil, color: COLORS.p2 };
+  const view1: KartView = { progress: p1.progress, lateral: p1.lateral, speed: p1.speed, steer: p1.steer, fuel: p1.fuel, boost: performance.now() < p1.boostUntil, color: COLORS.p1 };
+  const view2: KartView = { progress: p2.progress, lateral: p2.lateral, speed: p2.speed, steer: p2.steer, fuel: p2.fuel, boost: performance.now() < p2.boostUntil, color: COLORS.p2 };
   const best = state.gameBests.karting;
+
+  if (online) return <KartingOnline onExit={() => setOnline(false)} />;
 
   if (phase === 'lobby') {
     return (
@@ -246,7 +289,7 @@ export function Karting() {
             <div>
               <div className="mb-3 flex flex-wrap items-center gap-2"><span className="rounded-full border border-[rgba(183,243,74,0.35)] bg-[rgba(183,243,74,0.1)] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.16em] text-acid">3D · Local multiplayer</span><span className="rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.16em] text-white/40">1–2 players</span></div>
               <h1 className="max-w-xl font-display text-[42px] font-semibold leading-[0.92] tracking-tight text-white sm:text-[64px]">Fuel.<br />Answer.<br /><span className="text-acid">Race.</span></h1>
-              <p className="mt-3 max-w-md text-[12px] leading-relaxed text-white/55">A real 3D kart race where knowledge is the fuel. Two players race split-screen, answer their own questions, and burn fuel with every second on the track.</p>
+              <p className="mt-3 max-w-md text-[12px] leading-relaxed text-white/55">A real 3D kart race where knowledge is the fuel. Race split-screen on one device or create an online room and race a friend on another device.</p>
               <div className="mt-4 flex flex-wrap gap-2"><span className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-[10px] text-white/55">6 min</span><span className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-[10px] text-white/55">Split-screen 3D</span>{best && <span className="rounded-lg border border-[rgba(183,243,74,0.3)] px-2.5 py-1.5 text-[10px] font-semibold text-acid"><Icon name="Trophy" size={10} className="mr-1 inline" />Best {best.score}</span>}</div>
             </div>
             <div className="rounded-3xl border border-white/15 bg-[#071018]/85 p-4 backdrop-blur-2xl sm:p-5">
@@ -255,8 +298,9 @@ export function Karting() {
                 <button onClick={() => setMode('local')} className={cn('rounded-xl border p-3 text-left', mode === 'local' ? 'border-[rgba(183,243,74,0.5)] bg-[rgba(183,243,74,0.08)]' : 'border-white/10 bg-white/[0.03]')}><div className="flex items-center gap-2 text-[11px] font-semibold text-white"><Icon name="Users" size={13} />2 players</div><div className="mt-1 text-[9px] text-white/35">Local split-screen</div></button>
                 <button onClick={() => setMode('ai')} className="rounded-xl border p-3 text-left" style={{ borderColor: mode === 'ai' ? 'rgba(77,225,193,0.5)' : 'rgba(255,255,255,0.1)', background: mode === 'ai' ? 'rgba(77,225,193,0.08)' : 'rgba(255,255,255,0.03)' }}><div className="flex items-center gap-2 text-[11px] font-semibold text-white"><Icon name="Bot" size={13} />Vs Nova</div><div className="mt-1 text-[9px] text-white/35">AI rival</div></button>
               </div>
+              <div className="mt-2"><button onClick={() => setOnline(true)} className="flex w-full items-center gap-2 rounded-xl border border-[rgba(77,225,193,0.28)] bg-[rgba(77,225,193,0.06)] p-2.5 text-left transition-colors hover:bg-[rgba(77,225,193,0.1)]"><span className="flex h-8 w-8 items-center justify-center rounded-lg border border-[rgba(77,225,193,0.3)] text-mint"><Icon name="Globe2" size={15} /></span><span className="flex-1"><span className="block text-[11px] font-semibold text-white">Race online · room code</span><span className="block text-[8.5px] text-white/35">Invite a friend on another device</span></span><span className="text-[8px] font-bold uppercase tracking-wider text-mint">Online</span></button></div>
               <div className="mt-3"><div className="mb-1.5 text-[8px] font-bold uppercase tracking-wider text-white/30">Race length</div><div className="flex gap-2">{[1, 2, 3].map((n) => <button key={n} onClick={() => setLaps(n)} className={cn('flex-1 rounded-lg border py-2 text-[10px] font-semibold', laps === n ? 'border-[rgba(183,243,74,0.4)] bg-[rgba(183,243,74,0.08)] text-acid' : 'border-white/10 text-white/45')}>{n} lap{n > 1 ? 's' : ''}</button>)}</div></div>
-              <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.025] p-2.5 text-[9px] leading-relaxed text-white/40"><span className="font-semibold text-white/70">How it works:</span> fuel constantly drains. Every correct answer adds fuel and a boost; wrong answers cost fuel. P1 uses 1–4. P2 uses 7–0. Mobile players tap their own answer buttons.</div>
+              <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.025] p-2.5 text-[9px] leading-relaxed text-white/40"><span className="font-semibold text-white/70">How it works:</span> fuel constantly drains. Every correct answer adds fuel and a boost; wrong answers cost fuel. P1 drives W/A/S/D and answers 1–4. P2 drives arrows and answers 7–0. Online: each player drives W/A/S/D on their own device.</div>
               <Button variant="primary" size="lg" className="mt-4 w-full" icon="Flag" onClick={start}>Start the race</Button>
               <div className="mt-2 text-center text-[8px] text-white/25">Correct answer = +28 fuel · Wrong = −10 fuel · Fuel 0 = stopped</div>
             </div>
@@ -290,8 +334,8 @@ export function Karting() {
           <div className="pointer-events-none absolute left-3 top-3 rounded-md border border-white/10 bg-black/45 px-2 py-1 text-[8px] font-bold uppercase tracking-wider" style={{ color: COLORS.p1 }}>P1 cam · {Math.min(laps, Math.floor(p1.progress) + 1)}/{laps}</div>
           <div className="pointer-events-none absolute right-3 top-3 rounded-md border border-white/10 bg-black/45 px-2 py-1 text-[8px] font-bold uppercase tracking-wider" style={{ color: COLORS.p2 }}>{mode === 'ai' ? 'Nova cam' : 'P2 cam'} · {Math.min(laps, Math.floor(p2.progress) + 1)}/{laps}</div>
           <div className="pointer-events-none absolute inset-x-3 bottom-3 flex gap-2">
-            <div className="flex-1 rounded-lg border border-white/10 bg-black/50 px-2.5 py-1.5"><div className="flex justify-between text-[8px] font-bold uppercase tracking-wider text-white/35"><span style={{ color: COLORS.p1 }}>P1 fuel</span><span>{Math.round(p1.fuel)}/100</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-all" style={{ width: `${p1.fuel}%`, background: COLORS.p1 }} /></div></div>
-            <div className="flex-1 rounded-lg border border-white/10 bg-black/50 px-2.5 py-1.5"><div className="flex justify-between text-[8px] font-bold uppercase tracking-wider text-white/35"><span style={{ color: COLORS.p2 }}>{mode === 'ai' ? 'Nova' : 'P2'} fuel</span><span>{Math.round(p2.fuel)}/100</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-all" style={{ width: `${p2.fuel}%`, background: COLORS.p2 }} /></div></div>
+            <div className="flex-1 rounded-lg border border-white/10 bg-black/50 px-2.5 py-1.5"><div className="flex justify-between text-[8px] font-bold uppercase tracking-wider text-white/35"><span style={{ color: COLORS.p1 }}>P1 fuel</span><span>{Math.round(p1.fuel)}/100 · {Math.round(p1.speed * 10)} km/h</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-all" style={{ width: `${p1.fuel}%`, background: COLORS.p1 }} /></div></div>
+            <div className="flex-1 rounded-lg border border-white/10 bg-black/50 px-2.5 py-1.5"><div className="flex justify-between text-[8px] font-bold uppercase tracking-wider text-white/35"><span style={{ color: COLORS.p2 }}>{mode === 'ai' ? 'Nova' : 'P2'} fuel</span><span>{Math.round(p2.fuel)}/100 · {Math.round(p2.speed * 10)} km/h</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-all" style={{ width: `${p2.fuel}%`, background: COLORS.p2 }} /></div></div>
           </div>
           {phase === 'countdown' && <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/55 backdrop-blur-[2px]"><div className="text-center"><div className="font-display text-[92px] font-bold leading-none text-acid" style={{ textShadow: '0 0 60px rgba(183,243,74,0.35)' }}>{countdown}</div><div className="mt-1 text-[10px] font-bold uppercase tracking-[0.3em] text-white/50">Answer to fuel</div></div></div>}
         </div>
@@ -305,7 +349,7 @@ export function Karting() {
             </div>
           )}
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[8.5px] text-white/25"><span>P1 keys 1–4 · P2 keys 7–0 · Mobile tap options</span><span>Every correct answer adds 28 fuel and a 2.6s boost.</span></div>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[8.5px] text-white/25"><span>P1 drives W/A/S/D · answers 1–4 | P2 drives arrows · answers 7–0</span><span>Every correct answer adds 28 fuel and a 2.6s boost.</span></div>
       </div>
     </GameShell>
   );

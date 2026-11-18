@@ -1,0 +1,12 @@
+import { chromium } from 'playwright-core';
+const browser = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args:['--use-gl=angle','--use-angle=swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } }); page.setDefaultTimeout(5000);
+const errs=[]; page.on('pageerror',e=>errs.push(e.message)); page.on('console',m=>{if(m.type()==='error')errs.push(m.text().slice(0,300))});
+await page.goto('http://127.0.0.1:4174/#/arcade/karting',{waitUntil:'domcontentloaded'}); await page.waitForTimeout(900);
+await page.evaluate(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent?.includes('Race online')); b?.click();});
+await page.waitForTimeout(1500);
+console.log('URL',page.url());
+console.log('BODY',(await page.locator('body').innerText()).slice(-1000));
+console.log('ERRS',errs);
+await page.screenshot({path:'/tmp/online-lobby.png',timeout:15000}).catch(e=>console.log('shot err',e.message));
+await browser.close();

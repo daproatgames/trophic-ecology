@@ -1,0 +1,14 @@
+import { chromium } from 'playwright-core';
+const browser = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args:['--use-gl=angle','--use-angle=swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } }); page.setDefaultTimeout(5000);
+await page.goto('http://127.0.0.1:5173/#/arcade/karting',{waitUntil:'domcontentloaded'}); await page.waitForTimeout(1000);
+await page.getByRole('button',{name:'Explore first'}).click().catch(()=>{}); await page.waitForTimeout(400);
+const btn=page.locator('button').filter({hasText:'Race online'}).first();
+console.log('count',await btn.count(), 'box',await btn.boundingBox().catch(e=>'ERR '+e.message));
+console.log('visible',await btn.isVisible().catch(e=>'ERR'), 'enabled',await btn.isEnabled().catch(e=>'ERR'));
+console.log('elementAt', await page.evaluate(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent?.includes('Race online')); if(!b)return null; const r=b.getBoundingClientRect(); const el=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return {rect:{x:r.x,y:r.y,w:r.width,h:r.height}, at:el?.tagName+'.'+el?.className, txt:el?.textContent?.slice(0,40)};}));
+await page.screenshot({path:'/tmp/inspect-online.png'});
+await btn.click({force:true}).catch(e=>console.log('click err',e.message)); await page.waitForTimeout(800);
+console.log('AFTER',(await page.locator('body').innerText()).slice(-400));
+await page.screenshot({path:'/tmp/inspect-online2.png'});
+await browser.close();

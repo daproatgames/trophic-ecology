@@ -101,7 +101,7 @@ export function Arcade() {
       </div>
 
       <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between" glow="rgba(255,138,101,0.12)">
-        <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[rgba(255,138,101,0.1)] text-[#FF8A65]"><Icon name="Users" size={18} /></span><div><div className="eyebrow mb-1">New · 3D multiplayer</div><h2 className="font-display text-lg font-semibold">Fuel Kart 3D</h2><p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted">Two local players, one split-screen track, and a simple rule: correct answers are fuel. Race a friend or Nova AI on a rendered 3D circuit.</p></div></div>
+        <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[rgba(255,138,101,0.1)] text-[#FF8A65]"><Icon name="Users" size={18} /></span><div><div className="eyebrow mb-1">New · 3D multiplayer</div><h2 className="font-display text-lg font-semibold">Fuel Kart 3D</h2><p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted">Online room codes, local split-screen, and a simple rule: correct answers are fuel. Race a friend on another device or Nova AI on a rendered 3D circuit.</p></div></div>
         <LinkButton to="/arcade/karting" variant="primary" size="sm" icon="Flag">Start engine</LinkButton>
       </Card>
 

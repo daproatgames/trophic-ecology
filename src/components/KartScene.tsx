@@ -6,6 +6,9 @@ export interface KartView {
   fuel: number;
   boost: boolean;
   color: string;
+  lateral?: number;
+  speed?: number;
+  steer?: number;
 }
 
 function makeKart(color: string) {
@@ -61,11 +64,15 @@ export function KartScene({
   p1,
   p2,
   className,
+  viewMode = 'split',
+  viewer = 1,
 }: {
   preview?: boolean;
   p1?: KartView;
   p2?: KartView;
   className?: string;
+  viewMode?: 'split' | 'single';
+  viewer?: 1 | 2;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const racers = useRef<{ p1?: KartView; p2?: KartView }>({ p1, p2 });
@@ -298,12 +305,13 @@ export function KartScene({
       const p = curve.getPointAt((view?.progress ?? t) % 1);
       const tan = curve.getTangentAt((view?.progress ?? t) % 1).normalize();
       const normal = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
-      return { p: p.clone().addScaledVector(normal, lane), tan, normal };
+      return { p: p.clone().addScaledVector(normal, view?.lateral ?? lane), tan, normal };
     };
     const placeKart = (kart: THREE.Group, view: KartView | undefined, lane: number, t: number, dt: number) => {
       const { p, tan } = posFor(view, lane, t);
       kart.position.set(p.x, 0.02, p.z);
       kart.rotation.y = Math.atan2(tan.x, tan.z);
+      kart.rotation.z = -(view?.steer ?? 0) * 0.07 * Math.min(1, (view?.speed ?? 0) / 8);
       const wheels = kart.userData.wheels as THREE.Mesh[];
       const speed = view && view.fuel > 0 ? 6 + (view.boost ? 4 : 0) : 1;
       kart.userData.wheelSpin = ((kart.userData.wheelSpin as number) ?? 0) + speed * dt;
@@ -341,36 +349,45 @@ export function KartScene({
         placeKart(kartB, racers.current.p2, -1.35, 0.05, dt);
         const follow = (camera: THREE.PerspectiveCamera, view: KartView | undefined, lane: number, t: number) => {
           const { p, tan } = posFor(view, lane, t);
-          const target = p.clone();
-          const desired = p.clone().addScaledVector(tan, -6.2).add(new THREE.Vector3(0, 3.1, 0));
-          camera.position.lerp(desired, 0.16);
-          camera.lookAt(target.clone().addScaledVector(tan, 6).add(new THREE.Vector3(0, 1.1, 0)));
+          const speed = view?.speed ?? 0;
+          const desired = p.clone().addScaledVector(tan, -5.6 - Math.min(1.8, speed * 0.08)).add(new THREE.Vector3(0, 2.8 + Math.min(0.5, speed * 0.03), 0));
+          camera.position.lerp(desired, 0.18);
+          camera.fov += ((58 + Math.min(14, speed * 1.2)) - camera.fov) * 0.08;
+          camera.updateProjectionMatrix();
+          camera.lookAt(p.clone().addScaledVector(tan, 6).add(new THREE.Vector3(0, 1.0, 0)));
         };
         follow(cameraA, racers.current.p1, 1.35, 0);
         follow(cameraB, racers.current.p2, -1.35, 0.05);
         const w = el.clientWidth || 800;
         const h = el.clientHeight || 420;
-        renderer.setScissorTest(true);
-        if (w < 720) {
-          renderer.setViewport(0, h / 2, w, h / 2);
-          renderer.setScissor(0, h / 2, w, h / 2);
+        if (viewMode === 'single') {
+          renderer.setScissorTest(false);
+          renderer.setViewport(0, 0, w, h);
           renderer.clear();
-          renderer.render(scene, cameraA);
-          renderer.setViewport(0, 0, w, h / 2);
-          renderer.setScissor(0, 0, w, h / 2);
-          renderer.clear();
-          renderer.render(scene, cameraB);
+          renderer.render(scene, viewer === 1 ? cameraA : cameraB);
         } else {
-          renderer.setViewport(0, 0, w / 2, h);
-          renderer.setScissor(0, 0, w / 2, h);
-          renderer.clear();
-          renderer.render(scene, cameraA);
-          renderer.setViewport(w / 2, 0, w / 2, h);
-          renderer.setScissor(w / 2, 0, w / 2, h);
-          renderer.clear();
-          renderer.render(scene, cameraB);
+          renderer.setScissorTest(true);
+          if (w < 720) {
+            renderer.setViewport(0, h / 2, w, h / 2);
+            renderer.setScissor(0, h / 2, w, h / 2);
+            renderer.clear();
+            renderer.render(scene, cameraA);
+            renderer.setViewport(0, 0, w, h / 2);
+            renderer.setScissor(0, 0, w, h / 2);
+            renderer.clear();
+            renderer.render(scene, cameraB);
+          } else {
+            renderer.setViewport(0, 0, w / 2, h);
+            renderer.setScissor(0, 0, w / 2, h);
+            renderer.clear();
+            renderer.render(scene, cameraA);
+            renderer.setViewport(w / 2, 0, w / 2, h);
+            renderer.setScissor(w / 2, 0, w / 2, h);
+            renderer.clear();
+            renderer.render(scene, cameraB);
+          }
+          renderer.setScissorTest(false);
         }
-        renderer.setScissorTest(false);
       }
     };
     animate();
@@ -388,7 +405,7 @@ export function KartScene({
         else mat?.dispose();
       });
     };
-  }, [preview]);
+  }, [preview, viewMode, viewer]);
 
   return <div ref={host} className={className ?? 'h-full w-full'} aria-label="3D kart racing scene" />;
 }

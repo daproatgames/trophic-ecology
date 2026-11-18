@@ -159,8 +159,8 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
       };
       conn.on('open', announceHost);
       if (conn.open) announceHost();
-      conn.on('close', () => { setStatus('disconnected'); setError('Your opponent left the room.'); });
-      conn.on('error', () => setError('Connection error. Try a new room code.'));
+      conn.on('close', () => { if (startRetryRef.current) { window.clearInterval(startRetryRef.current); startRetryRef.current = null; } setStatus('disconnected'); setError('Your opponent left the room.'); });
+      conn.on('error', () => { if (startRetryRef.current) { window.clearInterval(startRetryRef.current); startRetryRef.current = null; } setError('Connection error. Try a new room code.'); });
     });
     peer.on('error', (e) => { setError(e.type === 'unavailable-id' ? 'That room code was taken. Create a new room.' : `Room error: ${e.type}`); setStatus('error'); });
   };
@@ -186,8 +186,9 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
           hello();
         }, 1200);
       });
-      conn.on('close', () => { setStatus('disconnected'); setError('The host left the room.'); });
-      conn.on('error', () => setError('Could not reach that room.'));
+      const stopHello = () => { if (helloRetryRef.current) { window.clearInterval(helloRetryRef.current); helloRetryRef.current = null; } };
+      conn.on('close', () => { stopHello(); setStatus('disconnected'); setError('The host left the room.'); });
+      conn.on('error', () => { stopHello(); setError('Could not reach that room.'); });
     });
     peer.on('error', (e) => { setError(e.type === 'peer-unavailable' ? 'Room not found. Check the code and try again.' : `Connection error: ${e.type}`); setStatus('error'); });
   };

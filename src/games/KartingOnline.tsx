@@ -214,6 +214,7 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
     if (d.type === 'hello') { setOpponent(d.name || 'Rival'); send({ type: 'welcome', name, code }); setStatus('connected'); }
     if (d.type === 'input' && d.input) hostInputs.current.p2 = d.input;
     if (d.type === 'answer' && typeof d.choice === 'number') processHostAnswer(2, d.choice);
+    if (d.type === 'reset') resetRace();
   };
 
   guestHandler.current = (raw: unknown) => {
@@ -354,11 +355,11 @@ export function KartingOnline({ onExit }: { onExit: () => void }) {
     const won = pub.winner === (role === 'host' ? 1 : 2);
     return (
       <GameShell gameId="karting" hud={<><HudStat icon="Flag" label="Laps" value={`${laps}`} color="var(--mint)" /><HudStat icon="Globe2" label="Online" value={code || 'room'} color="var(--amber)" /></>}>
-        <GameEnd gameId="karting" score={scoreOf(localRacer)} accuracy={accuracy(localRacer)} xp={30 + (won ? 40 : 0)} onReplay={() => { resetRace(); }} message={won ? 'You win the online race.' : `${opponent} takes the checkered flag.`}
+        <GameEnd gameId="karting" score={scoreOf(localRacer)} accuracy={accuracy(localRacer)} xp={30 + (won ? 40 : 0)} onReplay={() => { if (role === 'guest') send({ type: 'reset' }); resetRace(); }} message={won ? 'You win the online race.' : `${opponent} takes the checkered flag.`}
           stats={[{ label: 'Laps', value: `${Math.min(laps, Math.floor(localRacer.progress))}/${laps}` }, { label: 'Correct answers', value: `${localRacer.correct}/${localRacer.answers}` }, { label: 'Race time', value: `${Math.floor(pub.seconds / 60)}:${String(Math.floor(pub.seconds % 60)).padStart(2, '0')}` }, { label: 'Opponent', value: opponent }]}
         >
           <div className="mt-4 grid gap-2 sm:grid-cols-2">{[{ n: 'You', r: localRacer, c: localColor, w: won }, { n: opponent, r: otherRacer, c: role === 'host' ? COLORS.p2 : COLORS.p1, w: !won }].map((x) => <div key={x.n} className={cn('rounded-2xl border p-3', x.w ? 'border-[rgba(183,243,74,0.4)] bg-[rgba(183,243,74,0.06)]' : 'border-white/10 bg-black/25')}><div className="flex justify-between"><span className="text-[11px] font-semibold" style={{ color: x.c }}>{x.n}</span>{x.w && <span className="chip chip-acid">Winner</span>}</div><div className="mt-2 grid grid-cols-3 gap-2 text-[9px]"><div><div className="text-white/30">Laps</div><div className="text-white">{Math.min(laps, Math.floor(x.r.progress))}/{laps}</div></div><div><div className="text-white/30">Correct</div><div className="text-white">{x.r.correct}/{x.r.answers}</div></div><div><div className="text-white/30">Fuel</div><div className="text-white">{Math.round(x.r.fuel)}</div></div></div></div>)}</div>
-          <div className="mt-3 flex justify-center gap-2"><Button variant="primary" size="sm" icon="RotateCcw" onClick={() => resetRace()}>Back to room lobby</Button><Button size="sm" variant="ghost" icon="LogOut" onClick={() => { cleanup(); onExit(); }}>Leave room</Button></div>
+          <div className="mt-3 flex justify-center gap-2"><Button variant="primary" size="sm" icon="RotateCcw" onClick={() => { if (role === 'guest') send({ type: 'reset' }); resetRace(); }}>Back to room lobby</Button><Button size="sm" variant="ghost" icon="LogOut" onClick={() => { cleanup(); onExit(); }}>Leave room</Button></div>
         </GameEnd>
       </GameShell>
     );

@@ -54,12 +54,12 @@ const MATCHING_VARIANTS: MatchingSet[] = [
     ],
   },
   {
-    processes: ['photosynthesis', 'cellular respiration', 'ammonification', 'nitrification', 'denitrification', 'combustion'],
+    processes: ['photosynthesis', 'cellular respiration', 'ammonification', 'nitrification', 'nitrogen fixation', 'combustion'],
     items: [
       { label: 'Moss', answers: [0, 1] },
       { label: 'Guppies', answers: [1] },
-      { label: 'Decomposers in pond mud', answers: [1, 2, 4] },
-      { label: 'Lightning', answers: [3] },
+      { label: 'Decomposers in pond mud', answers: [1, 2] },
+      { label: 'Lightning', answers: [4] },
       { label: 'Industry', answers: [5] },
     ],
   },

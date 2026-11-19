@@ -3,15 +3,23 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useStudy } from '../state/StudyContext';
 import { EXAM_BLUEPRINTS, EXAM_MAP, buildExamPlan } from '../data/examBlueprints';
 import { examPct, saveExamStart } from '../lib/exam';
+import { downloadPracticePaper } from '../lib/pdf';
 import { Button, Card, Icon, LinkButton, PageHeader, Toggle, cn } from '../components/ui';
 
 export function Exam() {
   const { state, analytics } = useStudy();
   const [selected, setSelected] = useState('teacher-style');
   const [timed, setTimed] = useState(true);
+  const [downloading, setDownloading] = useState<'paper' | 'key' | null>(null);
   const navigate = useNavigate();
   const blueprint = EXAM_MAP[selected];
   const recent = state.exams.slice(0, 5);
+
+  const download = async (answerKey: boolean) => {
+    setDownloading(answerKey ? 'key' : 'paper');
+    try { await downloadPracticePaper(state, answerKey); }
+    finally { setDownloading(null); }
+  };
 
   const start = () => {
     const plan = buildExamPlan(state, selected);
@@ -61,10 +69,19 @@ export function Exam() {
               <div className="flex gap-2"><Icon name="Check" size={11} className="mt-0.5 shrink-0 text-mint" />Flag and revisit questions</div>
               <div className="flex gap-2"><Icon name="Check" size={11} className="mt-0.5 shrink-0 text-mint" />Answers auto-save in this tab</div>
               <div className="flex gap-2"><Icon name="Check" size={11} className="mt-0.5 shrink-0 text-mint" />Per-question explanations and marks</div>
-              <div className="flex gap-2"><Icon name="Check" size={11} className="mt-0.5 shrink-0 text-mint" />Self-check for written answers</div>
+              <div className="flex gap-2"><Icon name="Check" size={11} className="mt-0.5 shrink-0 text-mint" />AI marking for written answers</div>
             </div>
             <Button variant="primary" size="lg" className="mt-4 w-full" onClick={start} icon="Play">Start exam</Button>
             <p className="mt-2 text-center text-[9px] leading-relaxed text-dim">Fresh questions. Approximate style and difficulty — not a copy of the uploaded test.</p>
+          </Card>
+
+          <Card className="p-4" glow="rgba(77,225,193,0.08)">
+            <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold"><Icon name="Printer" size={14} className="text-mint" />Printable teacher-style paper</div>
+            <p className="text-[10px] leading-relaxed text-muted">A fresh 50-mark paper with Name/Date, Parts A–D, two-column options, matching blanks, answer lines and K/A/C/T boxes. Download it as a real PDF — no website chrome. The answer key matches the last blank paper generated in this tab.</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button size="sm" variant="primary" icon="FileDown" onClick={() => void download(false)} disabled={downloading !== null}>{downloading === 'paper' ? 'Building…' : 'Blank PDF'}</Button>
+              <Button size="sm" variant="ghost" icon="KeyRound" onClick={() => void download(true)} disabled={downloading !== null}>{downloading === 'key' ? 'Building…' : 'Answer key'}</Button>
+            </div>
           </Card>
 
           <Card className="p-4">
@@ -80,7 +97,7 @@ export function Exam() {
         <div className="grid gap-4 md:grid-cols-3">
           <div><div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold"><Icon name="School" size={14} className="text-acid" />Teacher-style structure</div><p className="text-[10.5px] leading-relaxed text-muted">15 multiple choice, 5 process-matching items, 5 true/false items and 8 written questions worth 25 marks — a 50-mark parallel form.</p></div>
           <div><div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold"><Icon name="ShieldCheck" size={14} className="text-mint" />Fresh, not memorized</div><p className="text-[10.5px] leading-relaxed text-muted">The questions test the same concepts and command words as your practice test, but they are new items. No copied Q1–Q33.</p></div>
-          <div><div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold"><Icon name="ChartNoAxesCombined" size={14} className="text-amber" />Marks as feedback</div><p className="text-[10.5px] leading-relaxed text-muted">Written answers are auto-scored by rubric keywords, then you can self-check each one against the model answer. The result updates exam history only; mastery gets its own evidence from practice.</p></div>
+          <div><div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold"><Icon name="ChartNoAxesCombined" size={14} className="text-amber" />Marks as feedback</div><p className="text-[10.5px] leading-relaxed text-muted">Written answers are marked by AI against the model answer and marking points — not keyword matching — and each mark can be adjusted. The result updates exam history only; mastery gets its own evidence from practice.</p></div>
         </div>
       </Card>
 

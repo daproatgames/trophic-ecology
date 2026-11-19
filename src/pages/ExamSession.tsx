@@ -5,6 +5,7 @@ import type { ExamAnswer } from '../types';
 import type { ExamPlan } from '../data/examBlueprints';
 import { buildExamPlan } from '../data/examBlueprints';
 import { clearExamDraft, emptyAnswers, gradeExamPlan, examPct, loadExamDraft, loadExamStart, saveExamDraft } from '../lib/exam';
+import { markWrittenAnswers } from '../lib/ai';
 import { useCloud } from '../state/CloudContext';
 import { Button, Icon, LinkButton, Modal, ProgressBar, cn } from '../components/ui';
 import { sound } from '../lib/sound';
@@ -40,6 +41,7 @@ export function ExamSession() {
     return Math.max(0, plan.minutes * 60 - spent);
   });
   const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [marking, setMarking] = useState(false);
   const [saved, setSaved] = useState(true);
   const remainingRef = useRef(remaining);
   remainingRef.current = remaining;
@@ -60,10 +62,34 @@ export function ExamSession() {
     return () => window.clearTimeout(t);
   }, [answers, index, plan, startedAt, timed]);
 
-  const submit = () => {
+  const submit = async () => {
     if (!plan || submittedRef.current) return;
     submittedRef.current = true;
-    const result = gradeExamPlan(plan, answers, startedAt, Date.now());
+    setConfirmSubmit(false);
+    const written = flat.filter((item) => ['short', 'scenario', 'error', 'causeeffect', 'compare', 'teachback'].includes(item.question.type));
+    const items = written.map((item) => {
+      const answer = answers.find((entry) => entry.questionId === item.question.id);
+      return {
+        id: item.question.id,
+        prompt: item.question.prompt,
+        context: item.question.context,
+        points: item.points,
+        studentAnswer: typeof answer?.response === 'string' ? answer.response : '',
+        modelAnswer: item.question.modelAnswer ?? item.question.explanation,
+        rubric: (item.question.rubric ?? []).map((group) => group.label),
+      };
+    }).filter((item) => item.studentAnswer.trim());
+    let ai: { grades: Record<string, import('../types').AiGrade>; model?: string; error?: string } | undefined;
+    if (items.length) {
+      setMarking(true);
+      try {
+        const marked = await markWrittenAnswers(items);
+        ai = { grades: marked.grades, model: marked.model, error: marked.error };
+      } finally {
+        setMarking(false);
+      }
+    }
+    const result = gradeExamPlan(plan, answers, startedAt, Date.now(), ai);
     clearExamDraft();
     saveExam(result);
     const pct = examPct(result);
@@ -152,7 +178,7 @@ export function ExamSession() {
           <div className="flex items-center gap-2 sm:gap-3">
             <span className={cn('hidden items-center gap-1.5 text-[10px] font-semibold sm:flex', saved ? 'text-dim' : 'text-amber')}><span className={cn('h-1.5 w-1.5 rounded-full', saved ? 'bg-mint' : 'bg-amber')} />{saved ? 'Saved' : 'Saving…'}</span>
             <span className={cn('flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-display text-sm font-semibold tabular-nums', urgent ? 'border-[rgba(255,107,107,0.4)] bg-[rgba(255,107,107,0.08)] text-[#ff9a94]' : 'border-line bg-surface-2')}><Icon name="Clock3" size={13} />{timed ? `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : 'Untimed'}</span>
-            <Button size="sm" variant="primary" onClick={() => setConfirmSubmit(true)} >Submit</Button>
+            <Button size="sm" variant="primary" onClick={() => setConfirmSubmit(true)} disabled={marking}>{marking ? 'AI marking…' : 'Submit'}</Button>
           </div>
         </div>
         {timed && <ProgressBar value={remaining} max={plan.minutes * 60} height={2} color={urgent ? 'var(--coral)' : 'var(--acid)'} />}
@@ -195,7 +221,7 @@ export function ExamSession() {
                   </div>
                 )}
                 {['short', 'scenario', 'error', 'causeeffect', 'compare', 'teachback'].includes(current.question.type) && (
-                  <div><textarea className="textarea min-h-[210px]" value={typeof answer.response === 'string' ? answer.response : ''} onChange={(e) => setResponse(e.target.value)} placeholder="Write a complete answer. Name the process, the direction and the consequence." aria-label="Written answer" /><div className="mt-1.5 flex items-center justify-between text-[10px] text-dim"><span>Auto-scored by rubric keywords, then self-check at the end.</span><span>{typeof answer.response === 'string' ? answer.response.trim().split(/\s+/).filter(Boolean).length : 0} words</span></div></div>
+                  <div><textarea className="textarea min-h-[210px]" value={typeof answer.response === 'string' ? answer.response : ''} onChange={(e) => setResponse(e.target.value)} placeholder="Write a complete answer. Name the process, the direction and the consequence." aria-label="Written answer" /><div className="mt-1.5 flex items-center justify-between text-[10px] text-dim"><span>AI-marked against the model answer and rubric, then self-check at the end.</span><span>{typeof answer.response === 'string' ? answer.response.trim().split(/\s+/).filter(Boolean).length : 0} words</span></div></div>
                 )}
               </div>
               <div className="mt-6 flex items-center justify-between gap-2 border-t border-line pt-4">
@@ -220,20 +246,32 @@ export function ExamSession() {
               </div>
               <div className="mt-3 space-y-1 text-[9.5px] text-dim"><div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-[rgba(77,225,193,0.28)] bg-[rgba(77,225,193,0.06)]" />Answered</div><div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-line bg-surface-2" />Unanswered</div><div className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-amber" />Flagged</div></div>
               <div className="mt-3 border-t border-line pt-3"><div className="flex justify-between text-[10px]"><span className="text-muted">Answered</span><span className="font-semibold">{answeredCount}/{flat.length}</span></div><div className="mt-1 flex justify-between text-[10px]"><span className="text-muted">Flagged</span><span className="font-semibold">{flaggedCount}</span></div><div className="mt-1 flex justify-between text-[10px]"><span className="text-muted">Marks</span><span className="font-semibold">{plan.totalPoints}</span></div></div>
-              <Button variant="primary" className="mt-3 w-full" onClick={() => setConfirmSubmit(true)}>Review & submit</Button>
+              <Button variant="primary" className="mt-3 w-full" onClick={() => setConfirmSubmit(true)} disabled={marking}>{marking ? 'AI marking…' : 'Review & submit'}</Button>
             </div>
           </aside>
         </div>
       </div>
 
-      <Modal open={confirmSubmit} onClose={() => setConfirmSubmit(false)} title="Submit the exam?" description={timed ? `Time remaining: ${Math.floor(remaining / 60)}:${String(Math.floor(remaining % 60)).padStart(2, '0')}` : 'Untimed exam'} footer={<><Button variant="ghost" onClick={() => setConfirmSubmit(false)}>Keep working</Button><Button variant="primary" onClick={submit} icon="Send">Submit and mark</Button></>}>
+      <Modal open={confirmSubmit} onClose={() => setConfirmSubmit(false)} title="Submit the exam?" description={timed ? `Time remaining: ${Math.floor(remaining / 60)}:${String(Math.floor(remaining % 60)).padStart(2, '0')}` : 'Untimed exam'} footer={<><Button variant="ghost" onClick={() => setConfirmSubmit(false)}>Keep working</Button><Button variant="primary" onClick={() => void submit()} icon="Send" disabled={marking}>{marking ? 'AI marking…' : 'Submit and mark'}</Button></>}>
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-xl border border-line bg-surface-2 p-3 text-center"><div className="font-display text-2xl font-semibold">{answeredCount}</div><div className="text-[9px] text-dim">answered</div></div>
           <div className="rounded-xl border border-line bg-surface-2 p-3 text-center"><div className="font-display text-2xl font-semibold">{flat.length - answeredCount}</div><div className="text-[9px] text-dim">blank</div></div>
           <div className="rounded-xl border border-line bg-surface-2 p-3 text-center"><div className="font-display text-2xl font-semibold text-amber">{flaggedCount}</div><div className="text-[9px] text-dim">flagged</div></div>
         </div>
-        <p className="mt-3 text-[11px] leading-relaxed text-muted">Unanswered questions score zero. Written answers are auto-scored by rubric keywords and can be self-checked on the results page.</p>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted">Unanswered questions score zero. Written answers are marked by AI against the model answer and rubric, and can be self-checked on the results page.</p>
+        <p className="mt-2 text-[9.5px] leading-relaxed text-dim">Written answers are sent to Google Gemini for marking. No account, name or profile details are included.</p>
       </Modal>
+
+      {marking && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(4,8,12,0.88)] px-6 backdrop-blur-md">
+          <div className="max-w-md text-center">
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[rgba(183,243,74,0.3)] bg-[rgba(183,243,74,0.08)] text-acid"><Icon name="Sparkles" size={25} /></span>
+            <h2 className="mt-4 font-display text-2xl font-semibold text-white">AI is marking your written answers.</h2>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-white/45">It reads the ideas in your answer against the model answer and marking points — not just keywords. This usually takes a few seconds.</p>
+            <div className="mx-auto mt-4 h-1 w-40 overflow-hidden rounded-full bg-white/10"><div className="h-full w-1/2 animate-pulse rounded-full bg-acid" /></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

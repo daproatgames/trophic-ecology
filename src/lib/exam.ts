@@ -1,4 +1,4 @@
-import type { ExamAnswer, ExamResult } from '../types';
+import type { AiGrade, ExamAnswer, ExamResult } from '../types';
 import type { ExamPlan } from '../data/examBlueprints';
 import { gradeQuestion } from './grading';
 
@@ -24,7 +24,15 @@ export function emptyAnswers(plan: ExamPlan): ExamAnswer[] {
   );
 }
 
-export function gradeExamPlan(plan: ExamPlan, answers: ExamAnswer[], startedAt: number, endedAt = Date.now()): ExamResult {
+const WRITTEN_TYPES = ['short', 'scenario', 'error', 'causeeffect', 'compare', 'teachback'];
+
+export function gradeExamPlan(
+  plan: ExamPlan,
+  answers: ExamAnswer[],
+  startedAt: number,
+  endedAt = Date.now(),
+  ai?: { grades: Record<string, AiGrade>; model?: string; error?: string },
+): ExamResult {
   const byTopic: Record<string, { earned: number; total: number }> = {};
   const bySection: Record<string, { earned: number; total: number }> = {};
   let totalEarned = 0;
@@ -33,9 +41,10 @@ export function gradeExamPlan(plan: ExamPlan, answers: ExamAnswer[], startedAt: 
     const section = plan.sections.find((s) => s.id === answer.section);
     const item = section?.questions.find((q) => q.question.id === answer.questionId);
     if (!item) return answer;
-    const g = gradeQuestion(item.question, answer.response, false);
     const points = answer.points ?? item.points;
-    const earned = g.score * points;
+    const aiGrade = WRITTEN_TYPES.includes(item.question.type) ? ai?.grades[answer.questionId] : undefined;
+    const score = aiGrade ? Math.max(0, Math.min(1, aiGrade.awarded / Math.max(1, item.points))) : gradeQuestion(item.question, answer.response, false).score;
+    const earned = score * points;
     totalEarned += earned;
     totalPoints += points;
     const topic = item.question.topic;
@@ -45,7 +54,7 @@ export function gradeExamPlan(plan: ExamPlan, answers: ExamAnswer[], startedAt: 
     if (!bySection[answer.section ?? section!.id]) bySection[answer.section ?? section!.id] = { earned: 0, total: 0 };
     bySection[answer.section ?? section!.id].earned += earned;
     bySection[answer.section ?? section!.id].total += points;
-    return { ...answer, score: g.score, points };
+    return { ...answer, score, points, ai: aiGrade ?? answer.ai };
   });
   return {
     id: `exam-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -59,6 +68,9 @@ export function gradeExamPlan(plan: ExamPlan, answers: ExamAnswer[], startedAt: 
     byTopic,
     bySection,
     autoGraded: true,
+    aiGraded: !!ai && Object.keys(ai.grades).length > 0,
+    aiModel: ai?.model,
+    aiError: ai?.error,
   };
 }
 

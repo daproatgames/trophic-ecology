@@ -120,6 +120,12 @@ export interface GameBest {
   detail?: Record<string, number | string>;
 }
 
+export interface AiGrade {
+  awarded: number;
+  feedback: string;
+  model?: string;
+}
+
 export interface ExamAnswer {
   questionId: string;
   response: string | number | string[] | number[] | boolean | null;
@@ -127,6 +133,7 @@ export interface ExamAnswer {
   score?: number;
   points?: number;
   section?: string;
+  ai?: AiGrade;
 }
 
 export interface ExamResult {
@@ -141,6 +148,9 @@ export interface ExamResult {
   byTopic: Record<string, { earned: number; total: number }>;
   bySection: Record<string, { earned: number; total: number }>;
   autoGraded: boolean;
+  aiGraded?: boolean;
+  aiModel?: string;
+  aiError?: string;
 }
 
 export interface StudySession {

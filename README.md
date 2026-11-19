@@ -30,6 +30,8 @@ The app uses a hash router, so the production build can be served from any stati
 - **Test Autopsy** that distinguishes verified practice-test deductions from uncertain/illegible details.
 - **Local-first progress**: mastery, spaced repetition, XP, achievements, study history, exams and settings persist in `localStorage`; JSON export/import is available in Settings.
 - **Cloud accounts and global leaderboards**: optional username/password game accounts (no email) store a cloud save snapshot and publish karting, exam, mastery and XP scores to Firebase Firestore. Passwords are never stored; account IDs are SHA-256 credential hashes.
+- **AI marking for written answers**: short, scenario, error-analysis, cause/effect and compare answers are sent to Gemini against the question's model answer and marking points. It awards partial marks for correct ideas in any wording instead of counting keywords, then stores feedback with the result. If the AI call fails, the rubric marker is used and the result says so. This is a real Gemini call, not a local keyword trick.
+- **Print-ready teacher-style papers**: a real PDF download (not a browser print of the site), including Name/Date, Parts A–D, two-column multiple choice, mix-and-match blanks, modified true/false, answer lines, K/A/C/T boxes and a matching answer key. Marked results can also be downloaded as a clean PDF with answers, model answers and AI feedback.
 
 ## Learning model
 
@@ -67,3 +69,5 @@ python3 -m http.server 4173 --directory dist
 Online kart rooms use PeerJS WebRTC with public STUN/TURN relays, so two devices can create/join a 5-character room code without a custom game server. The host owns the race simulation and sends the start handshake, questions and state; the guest sends driving inputs and answers. Room codes are private to the session; there is no matchmaking queue. Because this is peer-to-peer, unusual restrictive networks can still block a connection.
 
 Cloud profiles and leaderboards use Firebase project `trophic-ecology-2026` (Firestore database `default`). The client config and security rules live in `src/lib/cloud.ts` and `firestore.rules`.
+
+The production build reads the Gemini browser key from the GitHub Actions secret `GEMINI_API_KEY` and writes it to `VITE_GEMINI_KEY`. The key is restricted to the GitHub Pages host and the Gemini API. For local AI testing, use a development key without HTTP-referrer restrictions (the production key will be rejected from `localhost`); start the exam and the marker will fall back to the rubric if no valid key is present.

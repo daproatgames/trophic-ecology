@@ -5,6 +5,7 @@ import { QUESTION_MAP } from '../data/questions';
 import { CONCEPT_MAP, TOPIC_MAP } from '../data/concepts';
 import { LESSON_MAP } from '../data/lessons';
 import { examPct, saveExamStart } from '../lib/exam';
+import { downloadResultsPdf } from '../lib/pdf';
 import { formatAnswer } from '../lib/grading';
 import { Button, Card, Icon, LinkButton, PageHeader, ProgressBar, Ring, cn } from '../components/ui';
 
@@ -42,7 +43,8 @@ export function ExamResults() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Exam results" title={`${GRADE(pct)} · ${pct}%`} description={`${exam.blueprintName} · ${exam.totalEarned}/${exam.totalPoints} marks · ${mins < 1 ? '<1 min' : `${mins} min`} used`} actions={<><Button variant="ghost" onClick={() => window.print()} icon="Printer">Print</Button><Button onClick={retake} icon="RotateCcw">Retake</Button><LinkButton to="/exam" variant="primary" icon="FileCheck2">New exam</LinkButton></>} />
+      <PageHeader eyebrow="Exam results" title={`${GRADE(pct)} · ${pct}%`} description={`${exam.blueprintName} · ${exam.totalEarned}/${exam.totalPoints} marks · ${mins < 1 ? '<1 min' : `${mins} min`} used`} actions={<><Button variant="ghost" onClick={() => void downloadResultsPdf(exam)} icon="FileDown">Download PDF</Button><Button onClick={retake} icon="RotateCcw">Retake</Button><LinkButton to="/exam" variant="primary" icon="FileCheck2">New exam</LinkButton></>} />
+      {exam.aiError && <div className="rounded-xl border border-[rgba(255,194,75,0.25)] bg-[rgba(255,194,75,0.05)] px-3.5 py-2.5 text-[10.5px] leading-relaxed text-[#d9b876]"><Icon name="TriangleAlert" size={12} className="mr-1.5 inline" />{exam.aiError} You can still adjust each written mark below.</div>}
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card className="p-5" glow={pct >= 70 ? 'rgba(77,225,193,0.12)' : 'rgba(255,194,75,0.12)'}>
@@ -54,7 +56,7 @@ export function ExamResults() {
               <div className="flex items-center justify-between text-sm"><span className="text-muted">Marks earned</span><span className="font-semibold">{exam.totalEarned} / {exam.totalPoints}</span></div>
               <div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted">Answered</span><span className="font-semibold">{answers.filter((a) => a.response !== null && String(a.response).trim() !== '').length}/{answers.length}</span></div>
               <div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted">Flagged</span><span className="font-semibold">{answers.filter((a) => a.flagged).length}</span></div>
-              <div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted">Written self-check</span><span className="font-semibold text-amber">available below</span></div>
+              <div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted">{exam.aiGraded ? 'AI writing marker' : 'Written marking'}</span><span className={cn('font-semibold', exam.aiGraded ? 'text-acid' : 'text-amber')}>{exam.aiGraded ? `Gemini · ${exam.aiModel ?? 'AI'}` : exam.aiError ? 'Rubric fallback' : 'Rubric + self-check'}</span></div>
               <div className="mt-3 rounded-lg border border-line bg-surface-2 px-3 py-2 text-[10px] leading-relaxed text-muted">{pct >= 80 ? 'Strong exam performance. Focus remaining time on written precision and the weakest topic below.' : pct >= 60 ? 'Solid foundation, but the written and application marks are where the next gains are.' : 'Use the topic breakdown and revision plan below. Do not simply retake; study the misses first.'}</div>
             </div>
           </div>
@@ -68,7 +70,7 @@ export function ExamResults() {
               return <div key={id}><div className="mb-1 flex justify-between text-[10.5px]"><span className="text-muted">{SECTION_LABELS[id] ?? id}</span><span className="font-semibold">{d.earned}/{d.total}</span></div><ProgressBar value={p} height={4} color={p >= 70 ? 'var(--mint)' : 'var(--amber)'} /></div>;
             })}
           </div>
-          <div className="mt-3 border-t border-line pt-2 text-[10px] leading-relaxed text-dim">Written marks are auto-scored by rubric keywords, then can be adjusted below. The practice test’s actual /50 was not filled in on your uploaded copy, so no comparison is invented.</div>
+          <div className="mt-3 border-t border-line pt-2 text-[10px] leading-relaxed text-dim">Written answers are marked by AI against each model answer and marking points, then can be adjusted below. The practice test’s actual /50 was not filled in on your uploaded copy, so no comparison is invented.</div>
         </Card>
       </div>
 
@@ -88,7 +90,7 @@ export function ExamResults() {
 
       <Card className="p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div><div className="eyebrow mb-1">Question review</div><h2 className="font-display text-lg font-semibold">Every mark explained</h2><p className="mt-0.5 text-[11px] text-muted">Use the filters to focus. For written answers, compare with the model answer and adjust your score honestly.</p></div>
+          <div><div className="eyebrow mb-1">Question review</div><h2 className="font-display text-lg font-semibold">Every mark explained</h2><p className="mt-0.5 text-[11px] text-muted">Use the filters to focus. For written answers, read the AI feedback and model answer, then adjust the mark if you disagree.</p></div>
           <div className="scroll-x">{([{ id: 'all', label: `All (${answers.length})` }, { id: 'wrong', label: `Incorrect (${wrong.length})` }, { id: 'flagged', label: `Flagged (${answers.filter((a) => a.flagged).length})` }, { id: 'written', label: `Written (${written.length})` }] as const).map((f) => <button key={f.id} onClick={() => setFilter(f.id)} className={cn('chip shrink-0', filter === f.id && 'chip-acid')}>{f.label}</button>)}</div>
         </div>
         <div className="space-y-3">
@@ -108,12 +110,18 @@ export function ExamResults() {
                 </summary>
                 <div className="mt-3 space-y-2 border-t border-line pt-3 text-[10.5px] leading-relaxed">
                   <div className="rounded-lg border border-line bg-surface px-3 py-2"><span className="font-bold text-dim">Your answer:</span> <span className={score >= 0.7 ? 'text-[#b8f3bd]' : 'text-[#ffb4ad]'}>{userResponse || '— blank —'}</span></div>
-                  <div className="rounded-lg border border-line bg-surface px-3 py-2"><span className="font-bold text-dim">Correct / model answer:</span> <span className="text-[#b8f3bd]">{q.type === 'fill' ? formatAnswer(q) : q.type === 'multi' || q.type === 'mcq' || q.type === 'truefalse' ? formatAnswer(q) : q.modelAnswer}</span></div>
+                  <div className="rounded-lg border border-line bg-surface px-3 py-2"><span className="font-bold text-dim">Correct / model answer:</span> <span className="text-[#b8f3bd]">{q.type === 'fill' ? formatAnswer(q) : q.type === 'multi' || q.type === 'mcq' || q.type === 'truefalse' ? formatAnswer(q) : (q.modelAnswer || q.explanation)}</span></div>
                   <div className="rounded-lg border border-line bg-surface px-3 py-2 text-muted"><span className="font-bold text-dim">Why:</span> {q.explanation}</div>
+                  {isWritten && a.ai && (
+                    <div className="rounded-lg border border-[rgba(183,243,74,0.22)] bg-[rgba(183,243,74,0.04)] p-2.5">
+                      <div className="flex items-center justify-between gap-2"><div className="text-[9px] font-bold uppercase tracking-wider text-acid">AI marker feedback</div><span className="text-[9px] font-semibold text-muted">{a.ai.awarded}/{points} marks</span></div>
+                      <p className="mt-1 text-[10.5px] leading-relaxed text-muted">{a.ai.feedback}</p>
+                    </div>
+                  )}
                   {isWritten && (
                     <div className="rounded-lg border border-[rgba(255,194,75,0.2)] bg-[rgba(255,194,75,0.04)] p-2.5">
-                      <div className="text-[9px] font-bold uppercase tracking-wider text-amber">Self-check this written answer</div>
-                      <p className="mt-1 text-[10px] text-muted">Auto-score: {Math.round(score * 100)}%. Read the model answer, then choose the mark you would actually award.</p>
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-amber">{a.ai ? 'Adjust this mark' : 'Self-check this written answer'}</div>
+                      <p className="mt-1 text-[10px] text-muted">{a.ai ? `AI awarded ${a.ai.awarded}/${points}.` : `Rubric score: ${Math.round(score * 100)}%.`} Read the model answer, then choose the mark you would actually award.</p>
                       <div className="mt-2 flex flex-wrap gap-1.5">{([0, 0.5, 1] as const).map((s) => <button key={s} onClick={() => updateExamSelfScore(exam.id, a.questionId, s)} className={cn('btn btn-sm h-7 text-[10px]', Math.abs(score - s) < 0.01 && 'btn-primary')}>{s === 0 ? '0%' : s === 0.5 ? '50%' : '100%'}</button>)}<span className="self-center text-[9px] text-dim">updates your saved mark</span></div>
                     </div>
                   )}
